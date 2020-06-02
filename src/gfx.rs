@@ -12,8 +12,9 @@ use vk::ImageAspectFlags;
 use vulkan::{
 	buffer::Buffer,
 	command::CommandPool,
+	descriptor::{DescriptorPool, DescriptorSet, DescriptorSetLayout, DescriptorType},
 	device::{BufferUsageFlags, Device, Queue},
-	image::{Format, Image, ImageSubresourceRange, ImageType, ImageUsageFlags, ImageView, Sampler},
+	image::{Format, Image, ImageLayout, ImageSubresourceRange, ImageType, ImageUsageFlags, ImageView, Sampler},
 	instance::{Instance, Version},
 	physical_device::PhysicalDevice,
 	pipeline::{PipelineLayout, VertexDesc},
@@ -29,7 +30,7 @@ pub struct Gfx {
 	layout: Arc<PipelineLayout>,
 	verts: Arc<Buffer<[TriangleVertex]>>,
 	image_view: Arc<ImageView>,
-	sampler: Arc<Sampler>,
+	desc_set: Arc<DescriptorSet>,
 	vshader: Arc<ShaderModule>,
 	fshader: Arc<ShaderModule>,
 }
@@ -63,9 +64,6 @@ impl Gfx {
 			(device, queues.next().unwrap())
 		};
 
-		let layout =
-			PipelineLayout::new(device.clone(), once((ShaderStageFlags::VERTEX, 0, size_of::<Vector2<f32>>() as _)));
-
 		let cmdpool = CommandPool::new(device.clone(), queue.family().clone(), true);
 
 		let data = [
@@ -97,14 +95,37 @@ impl Gfx {
 			ImageSubresourceRange::builder().aspect_mask(ImageAspectFlags::COLOR).level_count(1).layer_count(1).build();
 		let image_view = ImageView::new(image, format, subresource);
 
-		verts_future.join(image_future).then_signal_fence().wait();
-
 		let sampler = Sampler::new(device.clone());
+
+		let desc_layout = DescriptorSetLayout::builder(device.clone())
+			.desc(DescriptorType::COMBINED_IMAGE_SAMPLER, 1, ShaderStageFlags::FRAGMENT, once(sampler))
+			.build();
+
+		let layout = PipelineLayout::new(
+			device.clone(),
+			vec![desc_layout.clone()],
+			once((ShaderStageFlags::VERTEX, 0, size_of::<Vector2<f32>>() as _)),
+		);
+
+		let desc_pool =
+			DescriptorPool::new(device.clone(), 1, vec![(DescriptorType::COMBINED_IMAGE_SAMPLER, 1).into()]);
+
+		let desc_set = DescriptorSet::alloc(desc_pool, once(desc_layout)).next().unwrap();
+		DescriptorSet::update_builder(&device)
+			.write(
+				&desc_set,
+				0,
+				DescriptorType::COMBINED_IMAGE_SAMPLER,
+				once((None, &*image_view, ImageLayout::SHADER_READ_ONLY_OPTIMAL)),
+			)
+			.submit();
+
+		verts_future.join(image_future).then_signal_fence().wait();
 
 		let vshader = unsafe { ShaderModule::new(device.clone(), &vert_spv.await.unwrap()) };
 		let fshader = unsafe { ShaderModule::new(device.clone(), &frag_spv.await.unwrap()) };
 
-		Arc::new(Self { instance, device, queue, layout, verts, image_view, sampler, vshader, fshader })
+		Arc::new(Self { instance, device, queue, layout, verts, image_view, desc_set, vshader, fshader })
 	}
 }
 

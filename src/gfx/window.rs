@@ -9,6 +9,7 @@ use std::{
 };
 use vulkan::{
 	command::{ClearValue, CommandPool, InheritanceInfo},
+	descriptor::{DescriptorPool, DescriptorType},
 	image::{Format, Framebuffer, ImageView},
 	ordered_passes_renderpass,
 	pipeline::Pipeline,

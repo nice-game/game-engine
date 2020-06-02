@@ -1,6 +1,7 @@
 pub use ash::vk::Viewport;
 
 use crate::{
+	descriptor::DescriptorSetLayout,
 	device::Device,
 	render_pass::RenderPass,
 	shader::{ShaderModule, ShaderStageFlags},
@@ -17,12 +18,16 @@ use std::{
 pub struct PipelineLayout {
 	device: Arc<Device>,
 	pub vk: vk::PipelineLayout,
+	_set_layouts: Vec<Arc<DescriptorSetLayout>>,
 }
 impl PipelineLayout {
 	pub fn new(
 		device: Arc<Device>,
+		set_layouts: Vec<Arc<DescriptorSetLayout>>,
 		push_constant_ranges: impl IntoIterator<Item = (ShaderStageFlags, u32, u32)>,
 	) -> Arc<PipelineLayout> {
+		let set_layout_vks: Vec<_> = set_layouts.iter().map(|x| x.vk).collect();
+
 		let push_constant_ranges: Vec<_> = push_constant_ranges
 			.into_iter()
 			.map(|(stage_flags, offset, size)| {
@@ -30,9 +35,11 @@ impl PipelineLayout {
 			})
 			.collect();
 
-		let ci = vk::PipelineLayoutCreateInfo::builder().push_constant_ranges(&push_constant_ranges);
+		let ci = vk::PipelineLayoutCreateInfo::builder()
+			.set_layouts(&set_layout_vks)
+			.push_constant_ranges(&push_constant_ranges);
 		let vk = unsafe { device.vk.create_pipeline_layout(&ci, None) }.unwrap();
-		Arc::new(Self { device, vk })
+		Arc::new(Self { device, vk, _set_layouts: set_layouts })
 	}
 }
 impl Drop for PipelineLayout {

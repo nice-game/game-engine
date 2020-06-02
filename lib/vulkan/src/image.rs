@@ -197,7 +197,7 @@ impl Drop for ImageView {
 
 pub struct Sampler {
 	device: Arc<Device>,
-	vk: vk::Sampler,
+	pub(crate) vk: vk::Sampler,
 }
 impl Sampler {
 	pub fn new(device: Arc<Device>) -> Arc<Self> {
