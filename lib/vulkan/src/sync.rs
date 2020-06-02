@@ -1,6 +1,7 @@
 use crate::{
 	buffer::BufferAbstract,
 	command::CommandBuffer,
+	descriptor::DescriptorSet,
 	device::{Device, Queue},
 	image::{Framebuffer, Image},
 	pipeline::{Pipeline, PipelineLayout},
@@ -236,6 +237,7 @@ pub(crate) enum Resource {
 	Buffer(Arc<dyn BufferAbstract>),
 	// TODO: merge with CommandBufferAbstract trait?
 	CommandBufferSecondary(Arc<CommandBuffer<B1>>),
+	DescriptorSet(Arc<DescriptorSet>),
 	Framebuffer(Arc<Framebuffer>),
 	Image(Arc<Image>),
 	Pipeline(Arc<Pipeline>),

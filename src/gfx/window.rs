@@ -142,6 +142,7 @@ impl Window {
 				.record_secondary(true, false, Some(inherit))
 				.bind_pipeline(self.pipeline.clone())
 				.bind_vertex_buffers(0, once(self.gfx.verts.clone() as _), &[0])
+				.bind_descriptor_sets(self.gfx.layout.clone(), 0, once(self.gfx.desc_set.clone()), &[])
 				.push_constants(self.gfx.layout.clone(), ShaderStageFlags::VERTEX, 0, &Vector2::<f32>::new(-0.5, -0.5))
 				.draw(6, 1, 0, 0)
 				.build()

@@ -2,6 +2,7 @@ pub use ash::vk::{BufferMemoryBarrier, ClearValue, MemoryBarrier, PipelineStageF
 
 use crate::{
 	buffer::{Buffer, BufferAbstract},
+	descriptor::DescriptorSet,
 	device::Device,
 	image::{Framebuffer, Image, ImageLayout},
 	physical_device::QueueFamily,
@@ -243,6 +244,37 @@ impl<SEC: Bit> CommandBufferBuilder<SEC> {
 				sec: PhantomData,
 			})
 		}
+	}
+
+	pub fn bind_descriptor_sets(
+		mut self,
+		layout: Arc<PipelineLayout>,
+		first_set: u32,
+		descriptor_sets: impl IntoIterator<Item = Arc<DescriptorSet>>,
+		dynamic_offsets: &[u32],
+	) -> Self {
+		let descriptor_sets = descriptor_sets.into_iter();
+		let (lower, upper) = descriptor_sets.size_hint();
+		let mut descriptor_set_vks = Vec::with_capacity(upper.unwrap_or(lower));
+		for set in descriptor_sets {
+			descriptor_set_vks.push(set.vk);
+			self.resources.push(Resource::DescriptorSet(set));
+		}
+
+		unsafe {
+			self.pool.device.vk.cmd_bind_descriptor_sets(
+				self.vk,
+				vk::PipelineBindPoint::GRAPHICS,
+				layout.vk,
+				first_set,
+				&descriptor_set_vks,
+				dynamic_offsets,
+			)
+		};
+
+		self.resources.push(Resource::PipelineLayout(layout));
+
+		self
 	}
 
 	pub fn bind_pipeline(mut self, pipeline: Arc<Pipeline>) -> Self {

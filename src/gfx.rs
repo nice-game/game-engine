@@ -84,7 +84,7 @@ impl Gfx {
 		)
 		.copy_from_buffer(&mut queue, &cmdpool, verts);
 
-		let data = [[255u8, 255, 255, 255], [0u8, 0, 0, 255], [0u8, 0, 0, 255], [255u8, 255, 255, 255]];
+		let data = [[0u8, 255, 0, 255], [0u8, 0, 255, 255], [0u8, 0, 255, 255], [0u8, 255, 0, 255]];
 		let pixels = Buffer::init_slice(device.clone(), data.len() as _, B1, BufferUsageFlags::TRANSFER_SRC)
 			.copy_from_slice(&data);
 		let format = Format::R8G8B8A8_UINT;

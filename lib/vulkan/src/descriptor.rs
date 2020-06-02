@@ -115,7 +115,7 @@ impl Drop for DescriptorPool {
 
 pub struct DescriptorSet {
 	descriptor_pool: Arc<DescriptorPool>,
-	vk: vk::DescriptorSet,
+	pub(crate) vk: vk::DescriptorSet,
 }
 impl DescriptorSet {
 	pub fn alloc(
