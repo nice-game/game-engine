@@ -98,13 +98,18 @@ impl Gfx {
 		let sampler = Sampler::new(device.clone());
 
 		let desc_layout = DescriptorSetLayout::builder(device.clone())
-			.desc(DescriptorType::COMBINED_IMAGE_SAMPLER, 1, ShaderStageFlags::FRAGMENT, once(sampler))
+			.desc(
+				DescriptorType::COMBINED_IMAGE_SAMPLER,
+				1,
+				ShaderStageFlags::FRAGMENT | ShaderStageFlags::VERTEX,
+				once(sampler),
+			)
 			.build();
 
 		let layout = PipelineLayout::new(
 			device.clone(),
 			vec![desc_layout.clone()],
-			once((ShaderStageFlags::VERTEX, 0, size_of::<Vector2<f32>>() as _)),
+			once((ShaderStageFlags::VERTEX, 0, size_of::<[Vector2<f32>; 2]>() as _)),
 		);
 
 		let desc_pool =

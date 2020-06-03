@@ -121,7 +121,7 @@ impl ImageInit {
 			.copy_buffer_to_image(buffer, self.img.clone())
 			.pipeline_barrier(
 				PipelineStageFlags::TRANSFER,
-				PipelineStageFlags::FRAGMENT_SHADER,
+				PipelineStageFlags::FRAGMENT_SHADER | PipelineStageFlags::VERTEX_SHADER,
 				once(ImageMemoryBarrier::new(self.img.clone(), ImageLayout::SHADER_READ_ONLY_OPTIMAL)),
 			)
 			.build();

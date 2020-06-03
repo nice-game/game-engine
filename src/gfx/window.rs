@@ -130,6 +130,9 @@ impl Window {
 
 		self.frame_data[frame].cmdpool.reset(false);
 
+		let win_size: [f32; 2] = self.surface.window().inner_size().into();
+		let pc = ([100.0f32, 100.0], win_size);
+
 		// TODO: replace with real sprites
 		let secondaries = (0..2).map(|_| {
 			let inherit = InheritanceInfo {
@@ -143,7 +146,7 @@ impl Window {
 				.bind_pipeline(self.pipeline.clone())
 				.bind_vertex_buffers(0, once(self.gfx.verts.clone() as _), &[0])
 				.bind_descriptor_sets(self.gfx.layout.clone(), 0, once(self.gfx.desc_set.clone()), &[])
-				.push_constants(self.gfx.layout.clone(), ShaderStageFlags::VERTEX, 0, &Vector2::<f32>::new(-0.5, -0.5))
+				.push_constants(self.gfx.layout.clone(), ShaderStageFlags::VERTEX, 0, &pc)
 				.draw(6, 1, 0, 0)
 				.build()
 		});
