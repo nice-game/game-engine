@@ -1,6 +1,5 @@
 use crate::gfx::{Gfx, TriangleVertex};
 use ash::{version::DeviceV1_0, vk};
-use nalgebra::Vector2;
 use std::{
 	cmp::{max, min},
 	iter::{empty, once},
@@ -9,7 +8,6 @@ use std::{
 };
 use vulkan::{
 	command::{ClearValue, CommandPool, InheritanceInfo},
-	descriptor::{DescriptorPool, DescriptorType},
 	image::{Format, Framebuffer, ImageView},
 	ordered_passes_renderpass,
 	pipeline::Pipeline,

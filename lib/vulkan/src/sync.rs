@@ -3,7 +3,7 @@ use crate::{
 	command::CommandBuffer,
 	descriptor::DescriptorSet,
 	device::{Device, Queue},
-	image::{Framebuffer, Image},
+	image::{Framebuffer, Image, ImageView, Sampler},
 	pipeline::{Pipeline, PipelineLayout},
 	render_pass::RenderPass,
 };
@@ -233,6 +233,7 @@ impl<L: GpuFuture, R: GpuFuture> GpuFuture for JoinFuture<L, R> {
 	}
 }
 
+#[derive(Clone)]
 pub(crate) enum Resource {
 	Buffer(Arc<dyn BufferAbstract>),
 	// TODO: merge with CommandBufferAbstract trait?
@@ -240,7 +241,9 @@ pub(crate) enum Resource {
 	DescriptorSet(Arc<DescriptorSet>),
 	Framebuffer(Arc<Framebuffer>),
 	Image(Arc<Image>),
+	ImageView(Arc<ImageView>),
 	Pipeline(Arc<Pipeline>),
 	PipelineLayout(Arc<PipelineLayout>),
 	RenderPass(Arc<RenderPass>),
+	Sampler(Arc<Sampler>),
 }

@@ -29,7 +29,6 @@ pub struct Gfx {
 	queue: Arc<Queue>,
 	layout: Arc<PipelineLayout>,
 	verts: Arc<Buffer<[TriangleVertex]>>,
-	image_view: Arc<ImageView>,
 	desc_set: Arc<DescriptorSet>,
 	vshader: Arc<ShaderModule>,
 	fshader: Arc<ShaderModule>,
@@ -118,13 +117,13 @@ impl Gfx {
 		let desc_pool =
 			DescriptorPool::new(device.clone(), 1, vec![(DescriptorType::COMBINED_IMAGE_SAMPLER, 1).into()]);
 
-		let desc_set = DescriptorSet::alloc(desc_pool, once(desc_layout)).next().unwrap();
+		let desc_set = DescriptorSet::alloc(desc_pool, vec![desc_layout]).next().unwrap();
 		DescriptorSet::update_builder(&device)
 			.write(
 				&desc_set,
 				0,
 				DescriptorType::COMBINED_IMAGE_SAMPLER,
-				once((None, &*image_view, ImageLayout::SHADER_READ_ONLY_OPTIMAL)),
+				once((None, image_view, ImageLayout::SHADER_READ_ONLY_OPTIMAL)),
 			)
 			.submit();
 
@@ -133,7 +132,7 @@ impl Gfx {
 		let vshader = unsafe { ShaderModule::new(device.clone(), &vert_spv.await.unwrap()) };
 		let fshader = unsafe { ShaderModule::new(device.clone(), &frag_spv.await.unwrap()) };
 
-		Arc::new(Self { instance, device, queue, layout, verts, image_view, desc_set, vshader, fshader })
+		Arc::new(Self { instance, device, queue, layout, verts, desc_set, vshader, fshader })
 	}
 }
 

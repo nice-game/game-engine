@@ -4,21 +4,20 @@ use crate::{
 	device::Device,
 	image::{ImageLayout, ImageView, Sampler},
 	shader::ShaderStageFlags,
+	sync::Resource,
 };
 use ash::{version::DeviceV1_0, vk};
 use std::{
 	marker::PhantomData,
 	mem::transmute,
-	sync::{
-		atomic::{AtomicU32, Ordering},
-		Arc, Mutex,
-	},
+	sync::{Arc, Mutex},
 };
 
 pub struct DescriptorSetLayout {
 	device: Arc<Device>,
 	pub(crate) vk: vk::DescriptorSetLayout,
 	_immutable_samplers: Vec<Arc<Sampler>>,
+	binding_count: u32,
 }
 impl DescriptorSetLayout {
 	pub fn builder(device: Arc<Device>) -> DescriptorSetLayoutBuilder {
@@ -44,7 +43,12 @@ impl DescriptorSetLayoutBuilder {
 	pub fn build(self) -> Arc<DescriptorSetLayout> {
 		let ci = vk::DescriptorSetLayoutCreateInfo::builder().bindings(&self.bindings);
 		let vk = unsafe { self.device.vk.create_descriptor_set_layout(&ci, None) }.unwrap();
-		Arc::new(DescriptorSetLayout { device: self.device, vk, _immutable_samplers: self.immutable_samplers })
+		Arc::new(DescriptorSetLayout {
+			device: self.device,
+			vk,
+			_immutable_samplers: self.immutable_samplers,
+			binding_count: self.bindings.len() as _,
+		})
 	}
 
 	pub fn desc(
@@ -87,8 +91,6 @@ impl From<(DescriptorType, u32)> for DescriptorPoolSize {
 pub struct DescriptorPool {
 	device: Arc<Device>,
 	vk: vk::DescriptorPool,
-	alloc_count: AtomicU32,
-	free: Mutex<Vec<vk::DescriptorSet>>,
 }
 impl DescriptorPool {
 	pub fn new(device: Arc<Device>, max_sets: u32, pool_sizes: Vec<DescriptorPoolSize>) -> Arc<Self> {
@@ -96,51 +98,42 @@ impl DescriptorPool {
 			.max_sets(max_sets)
 			.pool_sizes(unsafe { transmute(&pool_sizes[..]) });
 		let vk = unsafe { device.vk.create_descriptor_pool(&ci, None) }.unwrap();
-		Arc::new(Self { device, vk, alloc_count: AtomicU32::default(), free: Mutex::default() })
-	}
-
-	fn free_descriptor_sets(&self) {
-		// let mut free = self.free.lock().unwrap();
-		// unsafe { self.device.vk.free_descriptor_sets(self.vk, &*free) };
-		// self.alloc_count.fetch_sub(free.len() as _, Ordering::Relaxed);
-		// free.clear();
+		Arc::new(Self { device, vk })
 	}
 }
 impl Drop for DescriptorPool {
 	fn drop(&mut self) {
-		assert!(*self.alloc_count.get_mut() == 0);
 		unsafe { self.device.vk.destroy_descriptor_pool(self.vk, None) };
 	}
 }
 
 pub struct DescriptorSet {
-	descriptor_pool: Arc<DescriptorPool>,
+	_descriptor_pool: Arc<DescriptorPool>,
 	pub(crate) vk: vk::DescriptorSet,
+	// one vec per binding
+	resources: Mutex<Vec<Vec<Resource>>>,
 }
 impl DescriptorSet {
 	pub fn alloc(
 		descriptor_pool: Arc<DescriptorPool>,
-		set_layouts: impl IntoIterator<Item = Arc<DescriptorSetLayout>>,
+		set_layouts: Vec<Arc<DescriptorSetLayout>>,
 	) -> impl Iterator<Item = Arc<DescriptorSet>> {
-		descriptor_pool.free_descriptor_sets();
-
-		let set_layout_vks: Vec<_> = set_layouts.into_iter().map(|x| x.vk).collect();
+		let set_layout_vks: Vec<_> = set_layouts.iter().map(|x| x.vk).collect();
 		let ci =
 			vk::DescriptorSetAllocateInfo::builder().descriptor_pool(descriptor_pool.vk).set_layouts(&set_layout_vks);
 		let vks = unsafe { descriptor_pool.device.vk.allocate_descriptor_sets(&ci) }.unwrap();
 
-		descriptor_pool.alloc_count.fetch_add(vks.len() as _, Ordering::Relaxed);
-
-		vks.into_iter().map(move |vk| Arc::new(DescriptorSet { descriptor_pool: descriptor_pool.clone(), vk }))
+		vks.into_iter().zip(set_layouts).map(move |(vk, layout)| {
+			Arc::new(DescriptorSet {
+				_descriptor_pool: descriptor_pool.clone(),
+				vk,
+				resources: Mutex::new(vec![vec![]; layout.binding_count as _]),
+			})
+		})
 	}
 
 	pub fn update_builder(device: &Device) -> DescriptorSetUpdate {
 		DescriptorSetUpdate::new(device)
-	}
-}
-impl Drop for DescriptorSet {
-	fn drop(&mut self) {
-		self.descriptor_pool.free.lock().unwrap().push(self.vk);
 	}
 }
 
@@ -160,18 +153,33 @@ impl<'a, 'b> DescriptorSetUpdate<'a, 'b> {
 		dst_set: &'b DescriptorSet,
 		dst_binding: u32,
 		descriptor_type: DescriptorType,
-		image_infos: impl IntoIterator<Item = (Option<&'c Sampler>, &'c ImageView, ImageLayout)>,
+		image_infos: impl IntoIterator<Item = (Option<Arc<Sampler>>, Arc<ImageView>, ImageLayout)>,
 	) -> DescriptorSetUpdate<'a, 'c> {
-		let image_info_vks: Vec<_> = image_infos
-			.into_iter()
-			.map(|(sampler, view, layout)| {
-				vk::DescriptorImageInfo::builder()
-					.sampler(sampler.map(|x| x.vk).unwrap_or(vk::Sampler::null()))
-					.image_view(view.vk)
-					.image_layout(layout)
-					.build()
-			})
-			.collect();
+		let image_infos = image_infos.into_iter();
+		let (lower, upper) = image_infos.size_hint();
+		let size = upper.unwrap_or(lower);
+
+		// TODO: buffer resources, just in case this builder is dropped without being submitted
+		let mut resources = dst_set.resources.lock().unwrap();
+		let resources = &mut resources[dst_binding as usize];
+		resources.clear();
+		resources.reserve(size);
+
+		let mut image_info_vks = Vec::with_capacity(size);
+
+		for (sampler, view, layout) in image_infos {
+			let info = vk::DescriptorImageInfo::builder()
+				.sampler(sampler.as_ref().map(|x| x.vk).unwrap_or(vk::Sampler::null()))
+				.image_view(view.vk)
+				.image_layout(layout)
+				.build();
+			image_info_vks.push(info);
+
+			if let Some(sampler) = sampler {
+				resources.push(Resource::Sampler(sampler));
+			}
+			resources.push(Resource::ImageView(view));
+		}
 
 		let write = vk::WriteDescriptorSet::builder()
 			.dst_set(dst_set.vk)
