@@ -1,6 +1,6 @@
 pub mod window;
 
-use crate::fs::read_all_u32;
+use crate::fs::{read_all_u32, read_all_u8};
 use ash::vk;
 use memoffset::offset_of;
 use nalgebra::Vector2;
@@ -37,6 +37,7 @@ pub struct Gfx {
 impl Gfx {
 	pub async fn new() -> Arc<Self> {
 		// start reading files now to use later
+		let img = read_all_u8("assets/colors.png");
 		let vert_spv = read_all_u32("build/shader.vert.spv");
 		let frag_spv = read_all_u32("build/shader.frag.spv");
 
@@ -66,6 +67,19 @@ impl Gfx {
 
 		let cmdpool = CommandPool::new(device.clone(), queue.family().clone(), true);
 
+		let img = image::load_from_memory(&img.await.unwrap()).unwrap().into_rgba();
+		let (width, height) = (img.width(), img.height());
+		let data: Vec<_> = img.pixels().cloned().collect();
+		let pixels = Buffer::init_slice(device.clone(), data.len() as _, B1, BufferUsageFlags::TRANSFER_SRC)
+			.copy_from_slice(&data);
+		let format = Format::R8G8B8A8_UNORM;
+		let usage = ImageUsageFlags::TRANSFER_DST | ImageUsageFlags::SAMPLED;
+		let (image, image_future) = Image::init(device.clone(), ImageType::TYPE_2D, width, height, 1, format, usage)
+			.copy_from_buffer(&queue, &cmdpool, pixels);
+		let subresource =
+			ImageSubresourceRange::builder().aspect_mask(ImageAspectFlags::COLOR).level_count(1).layer_count(1).build();
+		let image_view = ImageView::new(image, format, subresource);
+
 		let data = [
 			TriangleVertex { pos: [0.0, 0.0].into() },
 			TriangleVertex { pos: [1.0, 0.0].into() },
@@ -83,17 +97,6 @@ impl Gfx {
 			BufferUsageFlags::TRANSFER_DST | BufferUsageFlags::VERTEX_BUFFER,
 		)
 		.copy_from_buffer(&mut queue, &cmdpool, verts);
-
-		let data = [[0u8, 255, 0, 255], [0u8, 0, 255, 255], [0u8, 0, 255, 255], [0u8, 255, 0, 255]];
-		let pixels = Buffer::init_slice(device.clone(), data.len() as _, B1, BufferUsageFlags::TRANSFER_SRC)
-			.copy_from_slice(&data);
-		let format = Format::R8G8B8A8_UINT;
-		let usage = ImageUsageFlags::TRANSFER_DST | ImageUsageFlags::SAMPLED;
-		let (image, image_future) = Image::init(device.clone(), ImageType::TYPE_2D, 2, 2, 1, format, usage)
-			.copy_from_buffer(&queue, &cmdpool, pixels);
-		let subresource =
-			ImageSubresourceRange::builder().aspect_mask(ImageAspectFlags::COLOR).level_count(1).layer_count(1).build();
-		let image_view = ImageView::new(image, format, subresource);
 
 		let sampler = Sampler::new(device.clone());
 
