@@ -5,22 +5,18 @@ authors = ["Jamie VanderBoon <jamiev.integritymedia.group>"]
 edition = "2018"
 build = "build.rs"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
-ash = "0.30.0"
 byteorder = "1.3.4"
-futures = { version = "0.3.4", features = ["thread-pool"] }
-image = "0.23.4"
+font-kit = "0.10.0"
+futures = { version = "0.3.5", features = ["thread-pool"] }
+image = "0.23.9"
 lazy_static = "1.4.0"
-memoffset = "0.5.4"
-nalgebra = "0.21.0"
+memoffset = "0.5.5"
+nalgebra = "0.22.0"
+pathfinder_geometry = "0.5.1"
 typenum = "1.12.0"
-vulkan = { path = "lib/vulkan" }
-winit = "0.22.1"
+vulkan = { git = "https://github.com/nice-game/vulkan-rs" }
+winit = "0.22.2"
 
 [build-dependencies]
 shaderc = "0.6.2"
-
-[workspace]
-members = ["lib/vulkan"]

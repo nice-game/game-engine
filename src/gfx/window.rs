@@ -1,5 +1,4 @@
 use crate::gfx::{Gfx, TriangleVertex};
-use ash::{version::DeviceV1_0, vk};
 use std::{
 	cmp::{max, min},
 	iter::{empty, once},
@@ -8,15 +7,15 @@ use std::{
 };
 use vulkan::{
 	command::{ClearValue, CommandPool, InheritanceInfo},
-	image::{Format, Framebuffer, ImageView},
+	image::{ClearColorValue, Format, Framebuffer, ImageAspectFlags, ImageSubresourceRange, ImageView},
 	ordered_passes_renderpass,
-	pipeline::Pipeline,
+	pipeline::{GraphicsPipeline, Viewport},
 	render_pass::RenderPass,
 	shader::ShaderStageFlags,
-	surface::{ColorSpace, PresentMode, Surface, SurfaceCapabilities},
+	surface::{ColorSpace, PresentMode, Surface, SurfaceCapabilities, SurfaceFormat},
 	swapchain::{CompositeAlphaFlags, Swapchain},
 	sync::{Fence, GpuFuture},
-	Extent2D, Rect2D,
+	Extent2D, Rect2D, VkResult,
 };
 use winit::{
 	dpi::LogicalSize,
@@ -27,13 +26,13 @@ use winit::{
 pub struct Window {
 	pub(super) gfx: Arc<Gfx>,
 	surface: Arc<Surface<IWindow>>,
-	surface_format: vk::SurfaceFormatKHR,
+	surface_format: SurfaceFormat,
 	pub(super) render_pass: Arc<RenderPass>,
 	frame_data: [FrameData; 2],
 	image_extent: Extent2D,
 	present_mode: PresentMode,
 	swapchain: Arc<Swapchain<IWindow>>,
-	pub(super) pipeline: Arc<Pipeline>,
+	pub(super) pipeline: Arc<GraphicsPipeline>,
 	pub(super) framebuffers: Vec<Arc<Framebuffer>>,
 	frame: bool,
 	recreate_swapchain: bool,
@@ -54,7 +53,7 @@ impl Window {
 			})
 			.unwrap();
 
-		let render_pass = ordered_passes_renderpass!(gfx.device.clone(),
+		let render_pass = ordered_passes_renderpass!(&gfx.device,
 			attachments: { color: { load: Clear, store: Store, format: surface_format.format, samples: 1, } },
 			passes: [{ color: [color], depth_stencil: {}, input: [] }]
 		);
@@ -110,7 +109,7 @@ impl Window {
 				}
 				(idx, future)
 			},
-			Err(vk::Result::ERROR_OUT_OF_DATE_KHR) => {
+			Err(VkResult::ERROR_OUT_OF_DATE_KHR) => {
 				self.recreate_swapchain = true;
 				return;
 			},
@@ -156,17 +155,17 @@ impl Window {
 				self.render_pass.clone(),
 				framebuffer.clone(),
 				Rect2D::builder().extent(self.image_extent).build(),
-				&[ClearValue { color: vk::ClearColorValue { float32: [0.0, 0.0, 0.0, 1.0] } }],
+				&[ClearValue { color: ClearColorValue { float32: [0.0, 0.0, 0.0, 1.0] } }],
 			)
 			.execute_commands(secondaries)
 			.end_render_pass()
 			.build();
 		let (signal, wait) = self.gfx.queue.submit_after(future, primary).then_signal_semaphore();
-		let fence = (Box::new(signal) as Box<dyn GpuFuture>).then_signal_fence();
+		let fence = signal.then_signal_fence();
 		self.frame_data[frame].fence = Some(fence);
 
 		match Swapchain::present_after(vec![wait], self.gfx.queue.clone(), &[self.swapchain.clone()], &[image_idx]) {
-			Ok(true) | Err(vk::Result::ERROR_OUT_OF_DATE_KHR) => self.recreate_swapchain = true,
+			Ok(true) | Err(VkResult::ERROR_OUT_OF_DATE_KHR) => self.recreate_swapchain = true,
 			Ok(false) => (),
 			Err(err) => panic!(err),
 		}
@@ -222,15 +221,15 @@ fn get_caps(gfx: &Gfx, surface: &Surface<IWindow>) -> (SurfaceCapabilities, Exte
 	(caps, image_extent)
 }
 
-fn create_swapchain<T: 'static>(
+fn create_swapchain(
 	gfx: &Gfx,
-	surface: Arc<Surface<T>>,
+	surface: Arc<Surface<IWindow>>,
 	caps: &SurfaceCapabilities,
-	surface_format: &vk::SurfaceFormatKHR,
+	surface_format: &SurfaceFormat,
 	image_extent: Extent2D,
 	present_mode: PresentMode,
-	old_swapchain: Option<&Swapchain<T>>,
-) -> (Arc<Swapchain<T>>, Vec<Arc<ImageView>>) {
+	old_swapchain: Option<&Swapchain<IWindow>>,
+) -> (Arc<Swapchain<IWindow>>, Vec<Arc<ImageView>>) {
 	let (swapchain, images) = Swapchain::new(
 		gfx.device.clone(),
 		surface,
@@ -247,8 +246,8 @@ fn create_swapchain<T: 'static>(
 
 	let image_views = images
 		.map(|image| {
-			let range = vk::ImageSubresourceRange::builder()
-				.aspect_mask(vk::ImageAspectFlags::COLOR)
+			let range = ImageSubresourceRange::builder()
+				.aspect_mask(ImageAspectFlags::COLOR)
 				.level_count(1)
 				.layer_count(1)
 				.build();
@@ -259,13 +258,13 @@ fn create_swapchain<T: 'static>(
 	(swapchain, image_views)
 }
 
-fn create_pipeline(gfx: &Gfx, image_extent: Extent2D, render_pass: Arc<RenderPass>) -> Arc<Pipeline> {
+fn create_pipeline(gfx: &Gfx, image_extent: Extent2D, render_pass: Arc<RenderPass>) -> Arc<GraphicsPipeline> {
 	gfx.device
-		.build_pipeline(gfx.layout.clone(), render_pass)
+		.build_graphics_pipeline(gfx.layout.clone(), render_pass)
 		.vertex_shader(gfx.vshader.clone())
 		.fragment_shader(gfx.fshader.clone())
 		.vertex_input::<TriangleVertex>()
-		.viewports(&[vk::Viewport::builder()
+		.viewports(&[Viewport::builder()
 			.width(image_extent.width as _)
 			.height(image_extent.height as _)
 			.max_depth(1.0)

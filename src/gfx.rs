@@ -1,23 +1,25 @@
+pub mod gui;
+pub mod texture;
 pub mod window;
 
 use crate::fs::{read_all_u32, read_all_u8};
-use ash::vk;
+use gui::font::Font;
 use memoffset::offset_of;
 use nalgebra::Vector2;
-#[cfg(debug_assertions)]
-use std::ffi::CString;
 use std::{iter::once, mem::size_of, sync::Arc};
 use typenum::{B0, B1};
-use vk::ImageAspectFlags;
 use vulkan::{
 	buffer::Buffer,
 	command::CommandPool,
 	descriptor::{DescriptorPool, DescriptorSet, DescriptorSetLayout, DescriptorType},
 	device::{BufferUsageFlags, Device, Queue},
-	image::{Format, Image, ImageLayout, ImageSubresourceRange, ImageType, ImageUsageFlags, ImageView, Sampler},
+	image::{
+		Format, Image, ImageAspectFlags, ImageLayout, ImageSubresourceRange, ImageType, ImageUsageFlags, ImageView,
+		Sampler,
+	},
 	instance::{Instance, Version},
 	physical_device::PhysicalDevice,
-	pipeline::{PipelineLayout, VertexDesc},
+	pipeline::{PipelineLayout, VertexDesc, VertexInputAttributeDescription},
 	shader::{ShaderModule, ShaderStageFlags},
 	sync::GpuFuture,
 	Vulkan,
@@ -42,13 +44,13 @@ impl Gfx {
 
 		let vulkan = Vulkan::new().unwrap();
 
-		let name = CString::new(env!("CARGO_PKG_NAME")).unwrap();
+		let name = env!("CARGO_PKG_NAME");
 		let version = Version::new(
 			env!("CARGO_PKG_VERSION_MAJOR").parse().unwrap(),
 			env!("CARGO_PKG_VERSION_MINOR").parse().unwrap(),
 			env!("CARGO_PKG_VERSION_PATCH").parse().unwrap(),
 		);
-		let instance = Instance::new(vulkan, &name, version);
+		let instance = Instance::new(vulkan, name, version);
 
 		let (device, mut queue) = {
 			let physical_device = PhysicalDevice::enumerate(&instance).next().unwrap();
@@ -97,6 +99,8 @@ impl Gfx {
 		)
 		.copy_from_buffer(&mut queue, &cmdpool, verts);
 
+		let future = image_future.join(verts_future).then_signal_fence();
+
 		let sampler = Sampler::new(device.clone());
 
 		let desc_layout = DescriptorSetLayout::builder(device.clone())
@@ -127,7 +131,9 @@ impl Gfx {
 			)
 			.submit();
 
-		verts_future.join(image_future).then_signal_fence().wait();
+		let _font = Font::new(queue.clone(), cmdpool.clone());
+
+		future.wait();
 
 		let vshader = unsafe { ShaderModule::new(device.clone(), &vert_spv.await.unwrap()) };
 		let fshader = unsafe { ShaderModule::new(device.clone(), &frag_spv.await.unwrap()) };
@@ -142,12 +148,12 @@ pub struct TriangleVertex {
 	pub pos: Vector2<f32>,
 }
 impl VertexDesc for TriangleVertex {
-	fn attribute_descs() -> Vec<vk::VertexInputAttributeDescription> {
+	fn attribute_descs() -> Vec<VertexInputAttributeDescription> {
 		vec![
-			vk::VertexInputAttributeDescription::builder()
+			VertexInputAttributeDescription::builder()
 				.binding(0)
 				.location(0)
-				.format(vk::Format::R32G32_SFLOAT)
+				.format(Format::R32G32_SFLOAT)
 				.offset(offset_of!(Self, pos) as _)
 				.build(),
 		]
